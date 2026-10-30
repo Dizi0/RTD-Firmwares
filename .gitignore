@@ -1,0 +1,14 @@
+# Rust build artifacts
+target/
+tools/rtd-cli/target/
+tools/rtd-gui/target/
+
+# Extracted tool directory (zip is already tracked)
+RTDCustomerTool/
+
+# External reference clones & research scrapers
+external_*/
+external_portable_display/
+external_public_radiation/
+external_rtd2556/
+
