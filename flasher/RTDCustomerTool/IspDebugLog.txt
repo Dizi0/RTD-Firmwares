@@ -1,0 +1,22 @@
+[2024-04-18, 01:22:44] ========================strat=========================
+
+[2024-04-18, 01:22:44] enumIspFunction: 0, enumIspType: 0, Comm Id: 3
+
+[2024-04-18, 01:24:26] ------DoIsp Begin------
+[2024-04-18, 01:24:29] Enter isp mode: B0E, slave addr: 0x94.
+
+[2024-04-18, 01:24:41] ------DoIsp Begin------
+[2024-04-18, 01:24:43] Enter isp mode: B0E, slave addr: 0x94.
+
+[2026-10-30, 01:14:17] ========================strat=========================
+
+[2026-10-30, 01:14:17] enumIspFunction: 0, enumIspType: 0, Comm Id: 3
+
+[2026-10-30, 01:14:17] Auto isp progress OnTimer.
+
+[2026-10-30, 01:16:48] ========================strat=========================
+
+[2026-10-30, 01:16:48] enumIspFunction: 0, enumIspType: 0, Comm Id: 3
+
+[2026-10-30, 01:16:48] Auto isp progress OnTimer.
+

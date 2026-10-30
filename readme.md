@@ -35,7 +35,22 @@ A native Windows desktop application written in Rust using GPU-accelerated rende
 
 ---
 
-## 2. Firmware Catalog (`firmwares/`)
+## 2. Hardware Flasher: `RTDCustomerTool`
+
+The official Realtek hardware ISP flashing utility is included in the dedicated [`flasher/`](file:///d:/www/RTD-Firmwares/flasher/) directory:
+
+* **Direct Executable (Ready to run, no unzipping required)**:
+  ```powershell
+  # Launch the flasher utility directly:
+  .\flasher\RTDCustomerTool\RTDTool.exe
+  ```
+* **Original ZIP Archive**: `flasher/RTDCustomerTool_V3.7_20190114.zip`
+* **Role**: While `RTD-Firmware-Studio` designs, patches, and validates custom firmwares, `RTDCustomerTool` is used to burn the generated `.bin` images directly into the controller board's SPI flash memory via an HDMI ISP cable.
+* **Step-by-step guide**: See [Flashing Guide (`docs/flashing_guide.md`)](file:///d:/www/RTD-Firmwares/docs/flashing_guide.md).
+
+---
+
+## 3. Firmware Catalog (`firmwares/`)
 
 All stock and tested firmware binaries are cleanly organized by resolution, refresh rate, and verified hardware targets:
 
@@ -61,7 +76,7 @@ firmwares/
 
 ---
 
-## 3. Command-Line Utility: `rtd-cli`
+## 4. Command-Line Utility: `rtd-cli`
 
 A zero-dependency command-line utility is located in `bin/rtd-cli.exe`:
 
@@ -79,7 +94,7 @@ A zero-dependency command-line utility is located in `bin/rtd-cli.exe`:
 
 ---
 
-## 4. Documentation & Reverse-Engineering
+## 5. Documentation & Reverse-Engineering
 
 Detailed technical reference guides are provided in the [`docs/`](file:///d:/www/RTD-Firmwares/docs/) directory:
 
@@ -89,7 +104,7 @@ Detailed technical reference guides are provided in the [`docs/`](file:///d:/www
 
 ---
 
-## 5. Firmware Memory Map (Summary)
+## 6. Firmware Memory Map (Summary)
 
 RTD2556 / JG2555TB firmwares use an **8051 (MCS-51) architecture** with Keil C51 bank-switching. Production images are exactly **851,968 bytes (832 KB)**, divided into **13 banks of 64 KB (0x10000 bytes)** each.
 
@@ -106,7 +121,7 @@ RTD2556 / JG2555TB firmwares use an **8051 (MCS-51) architecture** with Keil C51
 
 ---
 
-## 6. Building from Source
+## 7. Building from Source
 
 Both tools are written in standard Rust (Edition 2021):
 
