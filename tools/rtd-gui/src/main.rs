@@ -760,6 +760,7 @@ fn unpack_1bit_logo(data: &[u8], width: usize, height: usize) -> egui::ColorImag
     egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba)
 }
 
+#[allow(dead_code)]
 fn find_osd_font_block(data: &[u8]) -> Option<usize> {
     let limit = data.len().min(0x80000);
     if limit < 4096 {
@@ -780,6 +781,7 @@ fn find_osd_font_block(data: &[u8]) -> Option<usize> {
     None
 }
 
+#[allow(dead_code)]
 fn unpack_osd_font_sheet(data: &[u8], start_offset: usize, cols: usize, rows: usize) -> egui::ColorImage {
     let width = cols * 13;
     let height = rows * 19;
@@ -1252,22 +1254,18 @@ impl RtdStudioApp {
                 }
             }
 
-            let mut osd_font_offset = None;
-            if logo_color_image.is_none() {
-                if let Some(off) = find_osd_font_block(&data) {
-                    osd_font_offset = Some(off);
-                    logo_color_image = Some(unpack_osd_font_sheet(&data, off, 16, 4));
-                }
-            }
+            let vlc_offset = data
+                .windows(6)
+                .position(|w| w == [0x24, 0x49, 0x92, 0x24, 0x49, 0x92]);
 
             let logo_type_desc = if has_boot_logo {
                 "Bank 06 1-bit Bitmap (0x064000)".to_string()
-            } else if let Some(off) = osd_font_offset {
-                format!("OSD Font & Tile ROM @ 0x{:06X} (12x18 1-bit extracted)", off)
+            } else if let Some(off) = vlc_offset {
+                format!("Realtek Hardware VLC Bitstream (~0x{:06X}, proprietary compression)", off)
             } else if fname.contains("无LOGO") || (data.len() > 0x00015 && data[0x00015] == 0x00) {
                 "Disabled / Neutral Boot (Fast Boot mode)".to_string()
             } else {
-                "No uncompressed Bank 06 bitmap or OSD font table detected".to_string()
+                "No raw Bank 06 bitmap detected".to_string()
             };
 
             self.inspector_logo_tex = None;
@@ -2625,16 +2623,15 @@ impl eframe::App for RtdStudioApp {
                                             ui.vertical_centered(|ui| {
                                                 if let Some(tex) = &self.inspector_logo_tex {
                                                     let display_size = egui::vec2(tex.size()[0] as f32 * 1.4, tex.size()[1] as f32 * 1.4);
-                                                    let title = if data.has_boot_logo {
-                                                        "Bank 06 Splash Preview"
-                                                    } else {
-                                                        "Extracted OSD Font & Tile ROM Preview"
-                                                    };
-                                                    ui.label(egui::RichText::new(title).weak());
+                                                    ui.label(egui::RichText::new("Bank 06 Splash Preview").weak());
                                                     ui.image((tex.id(), display_size));
+                                                } else if data.logo_type_desc.contains("VLC") {
+                                                    ui.add_space(22.0);
+                                                    ui.colored_label(egui::Color32::from_rgb(255, 190, 70), "[Realtek Hardware VLC Compressed Logo]");
+                                                    ui.label(egui::RichText::new("Proprietary silicon bitstream (not raw 1-bit bitmap)").weak());
                                                 } else {
                                                     ui.add_space(22.0);
-                                                    ui.label(egui::RichText::new("[No Bank 06 Bitmap - Splash Disabled]").weak());
+                                                    ui.label(egui::RichText::new("[No Bank 06 Bitmap]").weak());
                                                     ui.label(egui::RichText::new("Direct display initialization").weak());
                                                 }
                                             });
