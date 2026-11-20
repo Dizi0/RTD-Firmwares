@@ -760,6 +760,76 @@ fn unpack_1bit_logo(data: &[u8], width: usize, height: usize) -> egui::ColorImag
     egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba)
 }
 
+fn find_osd_font_block(data: &[u8]) -> Option<usize> {
+    let limit = data.len().min(0x80000);
+    if limit < 4096 {
+        return None;
+    }
+    let mut off = 0;
+    while off + 4096 <= limit {
+        if data[off..off + 27].iter().all(|&b| b == 0) {
+            let sample = &data[off..off + 2048];
+            let zeros = sample.iter().filter(|&&b| b == 0).count();
+            let ffs = sample.iter().filter(|&&b| b == 0xff).count();
+            if (900..=1750).contains(&zeros) && ffs < 100 {
+                return Some(off);
+            }
+        }
+        off += 0x100;
+    }
+    None
+}
+
+fn unpack_osd_font_sheet(data: &[u8], start_offset: usize, cols: usize, rows: usize) -> egui::ColorImage {
+    let width = cols * 13;
+    let height = rows * 19;
+    let mut rgba = vec![0u8; width * height * 4];
+    for p in rgba.chunks_exact_mut(4) {
+        p[0] = 14;
+        p[1] = 16;
+        p[2] = 22;
+        p[3] = 255;
+    }
+
+    let max_tiles = cols * rows;
+    let mut drawn = 0;
+    let mut off = start_offset;
+    while drawn < max_tiles && off + 27 <= data.len() {
+        let chunk = &data[off..off + 27];
+        off += 27;
+        // Skip completely blank or 0xFF tiles
+        if chunk.iter().all(|&b| b == 0) || chunk.iter().all(|&b| b == 0xff) {
+            continue;
+        }
+        let tx = (drawn % cols) * 13;
+        let ty = (drawn / cols) * 19;
+        for pair in 0..9 {
+            let b0 = chunk[pair * 3] as u16;
+            let b1 = chunk[pair * 3 + 1] as u16;
+            let b2 = chunk[pair * 3 + 2] as u16;
+            let r1 = (b0 << 4) | (b1 >> 4);
+            let r2 = ((b1 & 0x0f) << 8) | b2;
+            for x in 0..12 {
+                if (r1 & (0x800 >> x)) != 0 {
+                    let idx = ((ty + pair * 2) * width + (tx + x)) * 4;
+                    rgba[idx] = 235;
+                    rgba[idx + 1] = 240;
+                    rgba[idx + 2] = 255;
+                }
+                if (r2 & (0x800 >> x)) != 0 {
+                    let idx = ((ty + pair * 2 + 1) * width + (tx + x)) * 4;
+                    rgba[idx] = 235;
+                    rgba[idx + 1] = 240;
+                    rgba[idx + 2] = 255;
+                }
+            }
+        }
+        drawn += 1;
+    }
+
+    egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba)
+}
+
 #[derive(Clone, Default)]
 struct InspectorData {
     file_path: std::path::PathBuf,
@@ -1182,14 +1252,22 @@ impl RtdStudioApp {
                 }
             }
 
+            let mut osd_font_offset = None;
+            if logo_color_image.is_none() {
+                if let Some(off) = find_osd_font_block(&data) {
+                    osd_font_offset = Some(off);
+                    logo_color_image = Some(unpack_osd_font_sheet(&data, off, 16, 4));
+                }
+            }
+
             let logo_type_desc = if has_boot_logo {
-                "Bank 06 1-bit Bitmap (Generic DIY Board)".to_string()
-            } else if dual_boot_mirrored || filesize == 1048576 || (fname.contains("HUAWEI") && !fname.contains("无LOGO")) {
-                "OEM OSD Font-Tile Splash (Commercial Monitor, Bank 02/03)".to_string()
+                "Bank 06 1-bit Bitmap (0x064000)".to_string()
+            } else if let Some(off) = osd_font_offset {
+                format!("OSD Font & Tile ROM @ 0x{:06X} (12x18 1-bit extracted)", off)
             } else if fname.contains("无LOGO") || (data.len() > 0x00015 && data[0x00015] == 0x00) {
                 "Disabled / Neutral Boot (Fast Boot mode)".to_string()
             } else {
-                "No standard Bank 06 splash bitmap detected".to_string()
+                "No uncompressed Bank 06 bitmap or OSD font table detected".to_string()
             };
 
             self.inspector_logo_tex = None;
@@ -2547,12 +2625,13 @@ impl eframe::App for RtdStudioApp {
                                             ui.vertical_centered(|ui| {
                                                 if let Some(tex) = &self.inspector_logo_tex {
                                                     let display_size = egui::vec2(tex.size()[0] as f32 * 1.4, tex.size()[1] as f32 * 1.4);
-                                                    ui.label(egui::RichText::new("Bank 06 Splash Preview").weak());
+                                                    let title = if data.has_boot_logo {
+                                                        "Bank 06 Splash Preview"
+                                                    } else {
+                                                        "Extracted OSD Font & Tile ROM Preview"
+                                                    };
+                                                    ui.label(egui::RichText::new(title).weak());
                                                     ui.image((tex.id(), display_size));
-                                                } else if data.dual_boot_mirrored || data.filename.contains("HUAWEI") {
-                                                    ui.add_space(22.0);
-                                                    ui.colored_label(egui::Color32::LIGHT_GREEN, "[OEM Commercial Splash]");
-                                                    ui.label(egui::RichText::new("Hardware-compressed OSD tiles (Bank 02/03)").weak());
                                                 } else {
                                                     ui.add_space(22.0);
                                                     ui.label(egui::RichText::new("[No Bank 06 Bitmap - Splash Disabled]").weak());
