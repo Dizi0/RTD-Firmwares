@@ -6,7 +6,7 @@ Curated firmware repository, reverse-engineering documentation, and native binar
 
 ## 1. Desktop Suite: `RTD-Firmware-Studio`
 
-A native Windows desktop application written in Rust using GPU-accelerated rendering (`egui`/`wgpu`) is available at the root and in `bin/RTD-Firmware-Studio.exe`:
+A native Windows desktop application written in Rust using GPU-accelerated rendering (`egui`/`wgpu`) is available directly at the root of the repository (`RTD-Firmware-Studio.exe`):
 
 * **Firmware Composer**:
   * **Unified Workflow**: Combines panel timing synthesis, EDID monitor naming, custom boot splash injection, and factory OSD defaults in a single step.
