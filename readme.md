@@ -37,16 +37,21 @@ A native Windows desktop application written in Rust using GPU-accelerated rende
 
 ## 2. Hardware Flasher: `RTDCustomerTool`
 
-The official Realtek hardware ISP flashing utility is included in the dedicated [`flasher/`](file:///d:/www/RTD-Firmwares/flasher/) directory:
+The official Realtek hardware ISP flashing suites are included in the dedicated [`flasher/`](file:///d:/www/RTD-Firmwares/flasher/) directory:
 
-* **Direct Executable (Ready to run, no unzipping required)**:
+* **RTDCustomerTool V3.8 (Recommended, 2022-11-01)**:
   ```powershell
-  # Launch the flasher utility directly:
-  .\flasher\RTDCustomerTool\RTDTool.exe
+  # Launch the modern flasher suite directly:
+  .\flasher\RTDCustomerTool_V3.8\RTDTool.exe
   ```
-* **Original ZIP Archive**: `flasher/RTDCustomerTool_V3.7_20190114.zip`
-* **Role**: While `RTD-Firmware-Studio` designs, patches, and validates custom firmwares, `RTDCustomerTool` is used to burn the generated `.bin` images directly into the controller board's SPI flash memory via an HDMI ISP cable.
-* **Step-by-step guide**: See [Flashing Guide (`docs/flashing_guide.md`)](file:///d:/www/RTD-Firmwares/docs/flashing_guide.md).
+  * Original ZIP: `flasher/RTDCustomerTool_V3.8_20221101.zip`
+  * Features updated communication drivers (`Comm.dll`) and support for modern Realtek scalers.
+* **RTDCustomerTool V3.7 (Historical, 2019-01-14)**:
+  * Direct executable: `flasher/RTDCustomerTool/RTDTool.exe`
+  * Original ZIP: `flasher/RTDCustomerTool_V3.7_20190114.zip`
+* **Direct GPU Flashing (No Programmer Hardware Required)**:
+  * Using your PC's NVIDIA / AMD GPU and a standard HDMI cable, `RTDCustomerTool` can communicate with the board via DDC/CI I2C (`GFXI2C`) to dump or flash the firmware directly without any external USB-to-I2C programmer dongle.
+* **Step-by-step guide & GPU configuration**: See [Flashing Guide (`docs/flashing_guide.md`)](file:///d:/www/RTD-Firmwares/docs/flashing_guide.md).
 
 ---
 
@@ -59,7 +64,7 @@ firmwares/
 ├── 1080p_120hz_144hz/       # High-refresh FHD firmwares (Gaming panels: BOE, Innolux, AUO)
 ├── 1080p_60hz/              # Standard 60Hz FHD firmwares (LG, Samsung, Panda, Sharp IGZO)
 ├── 1200p_16_10/             # 1920x1200 16:10 aspect ratio panels (LP156WU1, B101UAN01)
-├── 2k_1440p/                # QHD 2560x1440 & Retina 2560x1600 (TV133QHM, N156KME, N133GCA)
+├── 2k_1440p/                # QHD 2560x1440, Retina 2048x1536/2560x1600, Surface 2160x1440/2256x1504
 ├── apple_imac/              # Apple iMac conversions (LM270WQ1 27" QHD 2560x1440)
 ├── tested_and_verified/     # Dumps verified on physical hardware (e.g. Essential 15 inch)
 └── oem_archives/            # Original manufacturer ZIP archives (historical backups)

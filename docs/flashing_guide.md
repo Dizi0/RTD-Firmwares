@@ -1,59 +1,90 @@
-# Flashing Guide: Realtek RTD2556 / JG2555TB via HDMI ISP
+# Flashing Guide: Realtek RTD Scaler Boards via HDMI ISP
 
-This guide details the procedure for flashing production firmware (`.bin`) images onto **Realtek RTD2556 / JG2555TB** controller boards without unsoldering the SPI flash chip, using an **HDMI ISP programmer cable** and **RTDCustomerTool**.
-
----
-
-## 1. Hardware Requirements
-
-1. **Target Board**: Realtek RTD2556 (e.g. JG2555TB Dual-mini HDMI board or similar).
-2. **Power Supply**: 12V DC power adapter (or 5V USB-C depending on board revision).
-3. **HDMI ISP Tool / Cable**:
-   * USB-to-I2C programmer based on FT232H, CH341A, or Realtek dedicated USB-ISP dongle.
-   * Standard HDMI cable connected between the programmer and the controller board's **HDMI 1** port.
-   * *Pin 15 (DDC SCL)*, *Pin 16 (DDC SDA)*, and *Pin 17 (Ground)* on the HDMI connector carry the ISP communication channel.
+This guide details the procedures for dumping and flashing production firmware (`.bin`) images onto **Realtek RTD2556 / JG2555TB / PCB800869** controller boards without desoldering the SPI flash chip, using either:
+1. **Direct GPU HDMI Connection (GFX I2C)**: No dedicated programmer dongle required!
+2. **Dedicated USB ISP Hardware Programmer**: Using FT232H, CH341A, or official Realtek USB-I2C dongles.
 
 ---
 
-## 2. Software Setup
+## 1. Flashing Utilities: `RTDCustomerTool`
 
-1. The official flashing utility is provided in `firmwares/oem_archives/RTDCustomerTool_V3.7_20190114.zip` (and extracted in `RTDCustomerTool/`).
-2. Run `RTDTool.exe` as Administrator on Windows.
+Two official Realtek ISP software packages are provided in the [`flasher/`](file:///d:/www/RTD-Firmwares/flasher/) directory:
 
----
+* **RTDCustomerTool V3.8 (Recommended, 2022-11-01)**:
+  * Location: [`flasher/RTDCustomerTool_V3.8/RTDTool.exe`](file:///d:/www/RTD-Firmwares/flasher/RTDCustomerTool_V3.8/RTDTool.exe)
+  * Archive: `flasher/RTDCustomerTool_V3.8_20221101.zip`
+  * Features updated communication drivers (`Comm.dll`), improved Windows 10/11 stability, and newer scaler definitions (RTD2537, RTD2556, RTD2795).
+* **RTDCustomerTool V3.7 (Historical, 2019-01-14)**:
+  * Location: [`flasher/RTDCustomerTool/RTDTool.exe`](file:///d:/www/RTD-Firmwares/flasher/RTDCustomerTool/RTDTool.exe)
+  * Archive: `flasher/RTDCustomerTool_V3.7_20190114.zip`
 
-## 3. Step-by-Step Burning Procedure
-
-### Step 1: Connect Hardware
-1. Connect the HDMI ISP cable to **HDMI 1** on the RTD2556 board.
-2. Apply DC power to the controller board (ensure the LED turns RED for Standby or GREEN/BLUE for Active).
-
-### Step 2: Configure RTDCustomerTool
-1. Open `RTDCustomerTool.exe`.
-2. Under the **Communication / ISP** tab:
-   * Select your programmer device (e.g., `Realtek USB-I2C` or `FT232H`).
-   * Set I2C Clock speed to **100 kHz** or **400 kHz** (100 kHz is recommended for cable stability).
-   * Click **Connect / Detect**. The software should return `Device Detected: RTD2556`.
-
-### Step 3: Load Firmware
-1. Go to the **ISP / Flash** tab.
-2. Click **Load File** and select your target `.bin` firmware (either from `firmwares/` or composed via `RTD-Firmware-Studio.exe`).
-3. Verify that the file size is **851,968 bytes (832 KB)**.
-4. Verify that the calculated checksum matches the 4-hex digit tag in the filename.
-
-### Step 4: Program & Verify
-1. Enable the following checkboxes:
-   * **Erase Flash** (Sector Erase or Full Chip Erase)
-   * **Program**
-   * **Verify**
-2. Click **Auto Program** (or **Burn**).
-3. Wait for the progress bar to reach 100% (typically 15 to 45 seconds).
-4. Once `Verify OK` is displayed, disconnect the HDMI ISP cable.
-5. Power-cycle the board. The new display configuration, splash logo, and OSD defaults will now be active.
+Run `RTDTool.exe` as Administrator on Windows.
 
 ---
 
-## 4. Troubleshooting & Failsafe Recovery
+## 2. Method A: Direct GPU Flashing via HDMI (No Hardware Programmer Needed)
+
+On systems with a dedicated GPU (e.g., **NVIDIA GeForce**, AMD Radeon, or Intel Arc), `RTDCustomerTool` can dump and flash the board's SPI flash memory directly over a **standard HDMI cable** using DDC/CI I2C commands (`Comm_GFXI2C.dll`).
+
+### Hardware Connection:
+1. Plug a standard HDMI cable from your PC / laptop GPU HDMI port directly into **HDMI 1** on the RTD controller board.
+2. Power the RTD board with its recommended 12V DC power supply (ensure the status LED is lit).
+
+### RTDCustomerTool Configuration:
+1. Launch `RTDTool.exe` as Administrator.
+2. In the top toolbar, set **Access Method**: `GFXI2C`.
+3. Set **Scaler IC**: Select `RTD2537T-CG` or `RTD2556`.
+4. Open menu **Communication Option** -> **GFXI2C Adjust Option**:
+   * **Graphics Detect Type**: `Manual`
+   * **Graphics Type**: `Nvidia` (or your active GPU brand)
+   * **Multi Monitor Select**: `Auto Detect Realtek Monitor`
+   * **Multi Realtek Monitor Select**: **`User Select`** (CRITICAL)
+5. In the `Multi RT Monitor Select` popup window:
+   * Select your portable display device: e.g., `Device Name: \\.\DISPLAY2, Output ID: 256` (whichever output ID corresponds to your HDMI port).
+
+> [!IMPORTANT]
+> **Troubleshooting `Enter Isp Mode fail! ErrorCode:0xA`**:
+> If you leave `Multi Realtek Monitor Select` set to `Auto Detect Realtek Monitor` or `First Realtek Monitor`, the NVIDIA driver probes `DISPLAY1` first (your primary desktop monitor or internal laptop screen). Because that display is not a Realtek scaler, the ISP handshake command times out and fails with `ErrorCode:0xA`.
+> **Fix**: Setting `Multi Realtek Monitor Select` -> `User Select` and explicitly selecting `\\.\DISPLAY2` forces the GPU to communicate directly with the RTD controller board.
+
+### Reading (Dumping) Firmware:
+1. Go to the **ISP** tab.
+2. Click **Read Total** (or specify bank range 0 to 7 / 0 to 12).
+3. The tool will read the flash contents and save a `.bin` image on your disk.
+
+### Writing (Flashing) Firmware:
+1. In the **ISP** tab, click **Load File** and select your `.bin` firmware.
+2. Ensure **Erase Flash**, **Program**, and **Verify** checkboxes are enabled.
+3. Click **Auto Program** (or **Burn**).
+4. Once `Verify OK` is reported, power-cycle the 12V supply to reboot the board.
+
+---
+
+## 3. Method B: Flashing via USB ISP Programmer Dongle
+
+If your PC does not have a free HDMI port or if you prefer an external programmer:
+
+1. **Hardware**: USB-to-I2C programmer based on FT232H, CH341A, or dedicated Realtek USB-ISP dongle.
+2. Connect the programmer's HDMI output to **HDMI 1** on the RTD board.
+3. In `RTDTool.exe`, set **Access Method**: `USB-I2C` (or select device under Communication Option).
+4. Set I2C Clock speed to **100 kHz** (for cable stability).
+5. Load file, click **Auto Program**, and wait for `Verify OK`.
+
+---
+
+## 4. OSD & Calibration Tips
+
+### Unlocking OSD Brightness & Contrast (DCR Lockout)
+If the **Brightness** and **Contrast** sliders are grayed out or unselectable in the monitor OSD menu, **Dynamic Contrast Ratio (DCR)** is enabled by default. Go into the Picture / Display menu in the OSD and turn **DCR to OFF**. Manual brightness and contrast controls will immediately unlock.
+
+### Fixing the OSD Brightness Divisor Bug (PWM Divisor 600 vs 100)
+On certain OEM RTD2556 / PCB800869 firmwares, the brightness slider jumps abruptly or only adjusts at the very high end of the 0–100 scale:
+* **Root Cause**: The Keil C51 routine in Bank 02 (`0x2CFFC`) and Bank 07 (`0x7FE9A`) loads `0x0258` (decimal 600) as the PWM divisor instead of `0x0064` (decimal 100).
+* **Fix**: Patching the divisor value from `0x0258` to `0x0064` restores smooth 0–100% linear PWM duty cycle regulation across all 100 steps.
+
+---
+
+## 5. Troubleshooting & Failsafe Recovery
 
 * **Error: "Device Not Found / I2C NACK"**:
   * Check the HDMI cable connection; ensure it is plugged into **HDMI 1**, not HDMI 2.
