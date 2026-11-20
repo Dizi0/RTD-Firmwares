@@ -65,3 +65,22 @@ pub fn calculate_checksum(data: &[u8]) -> u16 {
 ```
 
 If a binary is modified without updating this sum, `RTDCustomerTool` will flag an integrity warning during ISP flash operations.
+
+---
+
+## 5. Firmware Architectural Variants
+
+RTD2556 firmware binaries found in production and DIY driver kits generally fall into two distinct architectural layouts:
+
+| Feature / Metric | Variant A (JG2555TB Dual-HDMI / Portable Display) | Variant B (RTD2556 Universal / iMac QHD Conversions) |
+| :--- | :--- | :--- |
+| **Active Banks** | 13 Banks (Banks 00 to 12) | 7 Banks (Banks 00 to 06) + Bank 11 (NVRAM/User Calibration) |
+| **Image Size** | 851,968 bytes (832 KB) | 1,048,576 bytes (1024 KB SPI physical flash dump) |
+| **Empty Banks** | None (full 832 KB code & assets) | Banks 07–10 and 12–15 are unprogrammed `0xFF` padding |
+| **EDID Table Location** | **Bank 02 (`0x025BF4` and `0x025CF4`)** | **Bank 00 (`0x002787` and `0x002887`)** |
+| **OSD Table Location** | Bank 02 (`0x025000`) | Bank 02 (`0x022000`–`0x023000`) |
+| **Typical Target** | High-refresh 1080p/1200p gaming laptops (BOE, AUO, Innolux) | QHD 2560x1440 60Hz panels (e.g. LG LM270WQ1-SDF1/SDF2 Apple iMac 27") |
+
+> [!WARNING]
+> **Cross-Flashing Incompatibility**:
+> Flashing a Variant A binary (e.g., JG2555TB) onto a Variant B board (or vice versa) results in a black screen / failure to boot. Even though both utilize the Realtek RTD2556 scaler IC, the physical board PCB routes power sequencing GPIOs, backlight enable pins, and eDP transceiver rails differently. For custom configurations on Variant B boards, inspect and patch the native dump using `RTD-Firmware-Studio` (Binary Inspector tab) rather than synthesizing a fresh JG2555TB binary.

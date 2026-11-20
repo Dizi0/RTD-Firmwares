@@ -96,3 +96,18 @@ The 40-pin eDP interface provides **4 Main-Link lanes** (Lane 0, 1, 2, and 3), a
 | **38** | BL_PWR | Power | LED Backlight supply (+7V to +21V DC, typical +12V) |
 | **39** | BL_PWR | Power | LED Backlight supply (+7V to +21V DC, typical +12V) |
 | **40** | NC | No Connect | Reserved |
+
+---
+
+## 3. Apple iMac 27" (LM270WQ1-SDF1 / SDF2) High-Density Interface
+
+The 27-inch 2560x1440 (QHD) IPS panel used in Apple iMac Slim A1419 requires high-bandwidth eDP data delivery:
+
+* **Bandwidth Requirement**: 2560x1440 @ 59.95 Hz (CVT-RB) with 241.50 MHz pixel clock.
+* **eDP Main-Link**: **4 Lanes** operating at HBR (2.7 Gbps per lane, 10.8 Gbps total) to ensure stable 8-bit RGB color without link compression.
+* **Panel Logic Voltage ($V_{LCD}$)**: **+12.0V DC** (tolerance: 11.4V to 12.6V). Supplying only 3.3V or 5V to the panel logic rail will prevent the T-CON from initializing.
+* **Backlight Driving**: Apple iMac 27" LED backlight strings draw significant power and require a dedicated constant-current driver board (inverter) powered by a high-current 12V rail (typically $\ge$ 4A).
+
+> [!TIP]
+> **Troubleshooting Artifacts & Gray Lines**:
+> Due to the high pixel clock (241.5 MHz) running over unshielded DIY cable harnesses, any loose seating of the connector, micro-corrosion on the pins, or electromagnetic interference (EMI) from the adjacent backlight inverter will cause packet errors on the differential pairs. This manifests as horizontal or vertical gray lines across the screen. Always ensure the cable is firmly latched, away from magnetic inductors, and tested with a high-current 12V power supply.

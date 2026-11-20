@@ -194,10 +194,13 @@ fn analyze_firmware(path: &Path) -> Result<FirmwareAnalysis, String> {
         (1920, 1080, 60)
     };
 
+    let is_imac = fname.contains("LM270") || fname.contains("iMac") || fname.contains("IMAC") || fname.contains("apple_imac");
     let (pin_type, lane_config) = if fname.contains("30针") || fname.contains("2LANE") {
         ("30-pin (Compact eDP Connector)".to_string(), "eDP 2 Lanes".to_string())
-    } else if hz >= 110 || fname.contains("4LANE") || fname.contains("144Hz") || fname.contains("120Hz") || fname.contains("120HZ") {
-        ("40-pin (High-Refresh eDP Connector)".to_string(), "eDP 4 Lanes (Standard 120/144Hz)".to_string())
+    } else if is_imac {
+        ("30/40-pin (iMac eDP 4-Lane)".to_string(), "eDP 4 Lanes (Apple High-Bandwidth 2.7 Gbps)".to_string())
+    } else if hz >= 110 || fname.contains("4LANE") || fname.contains("144Hz") || fname.contains("120Hz") || fname.contains("120HZ") || res_w >= 2560 {
+        ("40-pin (High-Refresh / High-Bandwidth eDP)".to_string(), "eDP 4 Lanes (Standard 120/144Hz / 2K QHD)".to_string())
     } else {
         ("30-pin (Standard 60Hz eDP Connector)".to_string(), "eDP 2 Lanes (Standard 60Hz)".to_string())
     };
@@ -268,6 +271,14 @@ fn analyze_firmware(path: &Path) -> Result<FirmwareAnalysis, String> {
     } else if res_w == 1920 && res_h == 1200 {
         compatible_panels.push("LG LP156WU1-SPB1 (15.6\" 1920x1200 16:10 60Hz)");
         compatible_panels.push("AUO B101UAN01 (10.1\" 1920x1200 16:10 60Hz)");
+    } else if res_w == 2560 && res_h == 1440 {
+        compatible_panels.push("LG LM270WQ1-SDF2 (Apple iMac 27\" A1419 QHD eDP 4-lane)");
+        compatible_panels.push("LG LM270WQ1-SDF1 (Apple iMac 27\" A1419 QHD eDP 4-lane)");
+        compatible_panels.push("BOE NE156QHM-NY1 / NY2 (15.6\" 2560x1440 QHD 40-pin)");
+        compatible_panels.push("Innolux N156KME-GNA (15.6\" 2560x1440 QHD 40-pin)");
+    } else if res_w == 2560 && res_h == 1600 {
+        compatible_panels.push("Innolux N133GCA-GQ1 (13.3\" 2560x1600 16:10 40-pin)");
+        compatible_panels.push("BOE TV133QHM-NH0 (13.3\" 2560x1600 16:10 40-pin)");
     }
 
     Ok(FirmwareAnalysis {
