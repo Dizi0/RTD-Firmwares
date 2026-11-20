@@ -60,6 +60,7 @@ firmwares/
 ├── 1080p_60hz/              # Standard 60Hz FHD firmwares (LG, Samsung, Panda, Sharp IGZO)
 ├── 1200p_16_10/             # 1920x1200 16:10 aspect ratio panels (LP156WU1, B101UAN01)
 ├── 2k_1440p/                # QHD 2560x1440 & Retina 2560x1600 (TV133QHM, N156KME, N133GCA)
+├── apple_imac/              # Apple iMac conversions (LM270WQ1 27" QHD 2560x1440)
 ├── tested_and_verified/     # Dumps verified on physical hardware (e.g. Essential 15 inch)
 └── oem_archives/            # Original manufacturer ZIP archives (historical backups)
 ```
@@ -68,6 +69,7 @@ firmwares/
 
 | Firmware Name | Target Panel(s) | Resolution & Rate | Interface | Checksum |
 | :--- | :--- | :---: | :---: | :---: |
+| **`LM270WQ1-SDF2_2560X1440_60Hz_148A.bin`** | LG LM270WQ1-SDF2 (Apple iMac 27" A1419 Dump) | 2560x1440 @ 60Hz | 4-Lane eDP | `148A` |
 | **`CUSTOM_JG2555TB_2560X1440_60Hz_4LANE_7BEE_LM270WQ1-SDF2.bin`** | LG LM270WQ1-SDF2 (Apple iMac 27" A1419) | 2560x1440 @ 60Hz | 40-pin 4-Lane | `7BEE` |
 | **`Essential_15inch_120Hz_144Hz_MultiPanel.bin`** | NV156FHM-NX1/NX2, LM156LFGL01..05, B156HAN13.0 | 1920x1080 @ 120/144Hz | 40-pin 4-Lane | `7ADA` |
 | **`LP156WFG_M133NWF3_B156HAN13_144Hz.bin`** | LG LP156WFG, IVO M133NWF3, AUO B156HAN13.0 | 1920x1080 @ 144Hz | 40-pin 4-Lane | `59BC` |
