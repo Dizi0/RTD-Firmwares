@@ -188,6 +188,18 @@ const KNOWN_PANELS: &[PanelSpec] = &[
         template_tag: "60Hz_30PIN",
     },
     PanelSpec {
+        model: "LM270WQ1-SDF2",
+        brand: "LG Display",
+        size: "27.0\"",
+        resolution: (2560, 1440),
+        refresh_rate: 60,
+        pins: 40,
+        lanes: "4 Lanes (Apple iMac 27\" QHD)",
+        pixel_clock_mhz: 241.5,
+        description: "27.0\" 2K QHD (2560x1440) Apple iMac A1419 IPS Display - 40-pin 4-Lane eDP",
+        template_tag: "144Hz_4LANE",
+    },
+    PanelSpec {
         model: "TV133QHM-AW0",
         brand: "BOE",
         size: "13.3\"",
@@ -1155,7 +1167,9 @@ impl RtdStudioApp {
             let h_act = self.ds_res_w.trim().parse::<u32>().unwrap_or(1920);
             let v_act = self.ds_res_h.trim().parse::<u32>().unwrap_or(1080);
             let refresh_rate = self.ds_refresh_hz.trim().parse::<u32>().unwrap_or(144);
-            let auto_pclk = ((h_act + 280) * (v_act + 45) * refresh_rate) as f64 / 1_000_000.0;
+            let h_blank_calc = if h_act == 1920 && v_act == 1080 { 280 } else { 160 };
+            let v_blank_calc = if v_act == 1080 { 45 } else if v_act == 1440 { 41 } else { 35 };
+            let auto_pclk = ((h_act + h_blank_calc) * (v_act + v_blank_calc) * refresh_rate) as f64 / 1_000_000.0;
             let pclk_mhz = self.ds_pixel_clock.trim().parse::<f64>().unwrap_or(auto_pclk);
             let (template_tag, pins, lanes) = match self.ds_lane_choice {
                 0 => (
@@ -1194,7 +1208,7 @@ impl RtdStudioApp {
 
         let pclk_10khz = (pclk_mhz * 100.0).round() as u32;
         let h_blank = if h_act == 1920 && v_act == 1080 { 280 } else { 160 };
-        let v_blank = if v_act == 1080 { 45 } else { 35 };
+        let v_blank = if v_act == 1080 { 45 } else if v_act == 1440 { 41 } else { 35 };
 
         if data.len() >= 0x025BF4 + 128 {
             patch_edid_block(&mut data[0x025BF4..0x025BF4 + 128], &brand, &self.custom_screen_name, pclk_10khz, h_act, v_act, h_blank, v_blank);
@@ -1638,7 +1652,9 @@ impl eframe::App for RtdStudioApp {
                             let h: u32 = self.ds_res_w.parse().unwrap_or(1920);
                             let v: u32 = self.ds_res_h.parse().unwrap_or(1080);
                             let hz: u32 = self.ds_refresh_hz.parse().unwrap_or(144);
-                            let auto_pclk = ((h + 280) * (v + 45) * hz) as f64 / 1_000_000.0;
+                            let h_blank_calc = if h == 1920 && v == 1080 { 280 } else { 160 };
+                            let v_blank_calc = if v == 1080 { 45 } else if v == 1440 { 41 } else { 35 };
+                            let auto_pclk = ((h + h_blank_calc) * (v + v_blank_calc) * hz) as f64 / 1_000_000.0;
 
                             ui.horizontal(|ui| {
                                 ui.label("Pixel Clock:");

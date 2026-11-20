@@ -68,6 +68,7 @@ firmwares/
 
 | Firmware Name | Target Panel(s) | Resolution & Rate | Interface | Checksum |
 | :--- | :--- | :---: | :---: | :---: |
+| **`CUSTOM_JG2555TB_2560X1440_60Hz_4LANE_7BEE_LM270WQ1-SDF2.bin`** | LG LM270WQ1-SDF2 (Apple iMac 27" A1419) | 2560x1440 @ 60Hz | 40-pin 4-Lane | `7BEE` |
 | **`Essential_15inch_120Hz_144Hz_MultiPanel.bin`** | NV156FHM-NX1/NX2, LM156LFGL01..05, B156HAN13.0 | 1920x1080 @ 120/144Hz | 40-pin 4-Lane | `7ADA` |
 | **`LP156WFG_M133NWF3_B156HAN13_144Hz.bin`** | LG LP156WFG, IVO M133NWF3, AUO B156HAN13.0 | 1920x1080 @ 144Hz | 40-pin 4-Lane | `59BC` |
 | **`INNOLUX_N156HHE_GA1_120Hz_E043.bin`** | Innolux N156HHE-GA1 (High-speed 120Hz) | 1920x1080 @ 120Hz | 30-pin 2-Lane HBR2 | `E043` |
