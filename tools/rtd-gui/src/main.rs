@@ -832,6 +832,168 @@ fn unpack_osd_font_sheet(data: &[u8], start_offset: usize, cols: usize, rows: us
     egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba)
 }
 
+#[derive(Clone)]
+struct VlcBlockInfo {
+    offset: usize,
+    compressed_len: usize,
+    decompressed: Vec<u8>,
+    tile_count: usize,
+}
+
+fn decompress_realtek_vlc(data: &[u8], offset: usize) -> Option<Vec<u8>> {
+    if offset + 10 > data.len() {
+        return None;
+    }
+    let mut table = [0u8; 16];
+    let mut seen = 0u16;
+    for i in 0..8 {
+        let b = data[offset + i];
+        let hi = b >> 4;
+        let lo = b & 0x0f;
+        table[i * 2] = hi;
+        table[i * 2 + 1] = lo;
+        seen |= 1u16 << hi;
+        seen |= 1u16 << lo;
+    }
+    if seen != 0xFFFF {
+        return None;
+    }
+    let length = ((data[offset + 8] as usize) << 8) | (data[offset + 9] as usize);
+    if length < 32 || length > 25000 || offset + 10 + length > data.len() {
+        return None;
+    }
+    let payload = &data[offset + 10..offset + 10 + length];
+    let total_bits = payload.len() * 8;
+    let mut pos = 0usize;
+
+    let mut get_bit = || -> Option<u8> {
+        if pos >= total_bits {
+            return None;
+        }
+        let b = (payload[pos >> 3] >> (pos & 7)) & 1;
+        pos += 1;
+        Some(b)
+    };
+
+    let mut next_sym = || -> Option<u8> {
+        let b0 = get_bit()?;
+        if b0 == 0 {
+            return Some(table[0]);
+        }
+        let b1 = get_bit()?;
+        if b1 == 0 {
+            let b2 = get_bit()?;
+            if b2 == 0 {
+                return Some(table[1]);
+            }
+            let b3 = get_bit()?;
+            return Some(table[2 + b3 as usize]);
+        } else {
+            let b2 = get_bit()?;
+            if b2 == 0 {
+                let x0 = get_bit()?;
+                let x1 = get_bit()?;
+                let idx = (x0 as usize) | ((x1 as usize) << 1);
+                return Some(table[4 + idx]);
+            } else {
+                let x0 = get_bit()?;
+                let x1 = get_bit()?;
+                let x2 = get_bit()?;
+                let idx = (x0 as usize) | ((x1 as usize) << 1) | ((x2 as usize) << 2);
+                return Some(table[8 + idx]);
+            }
+        }
+    };
+
+    let mut out = Vec::with_capacity(length * 2);
+    while let (Some(n1), Some(n2)) = (next_sym(), next_sym()) {
+        out.push((n1 << 4) | n2);
+    }
+    if out.len() < 27 {
+        return None;
+    }
+    Some(out)
+}
+
+fn scan_realtek_vlc_blocks(data: &[u8]) -> Vec<VlcBlockInfo> {
+    let limit = data.len().min(0x80000);
+    let mut blocks = Vec::new();
+    let mut i = 0usize;
+    while i + 12 < limit {
+        let mut seen = 0u16;
+        for k in 0..8 {
+            let b = data[i + k];
+            seen |= 1u16 << (b >> 4);
+            seen |= 1u16 << (b & 0x0f);
+        }
+        if seen == 0xFFFF {
+            let length = ((data[i + 8] as usize) << 8) | (data[i + 9] as usize);
+            if (64..=25000).contains(&length) && i + 10 + length <= limit {
+                if let Some(dec) = decompress_realtek_vlc(data, i) {
+                    let tile_count = dec.len() / 27;
+                    if tile_count >= 4 {
+                        blocks.push(VlcBlockInfo {
+                            offset: i,
+                            compressed_len: length,
+                            decompressed: dec,
+                            tile_count,
+                        });
+                        i += 10 + length;
+                        continue;
+                    }
+                }
+            }
+        }
+        i += 1;
+    }
+    blocks
+}
+
+fn render_vlc_tiles(decompressed: &[u8], cols: usize, gap: usize) -> egui::ColorImage {
+    let cols = cols.max(1);
+    let max_tiles = (decompressed.len() / 27).min(256);
+    let rows = ((max_tiles + cols - 1) / cols).max(1);
+    let tw = 12 + gap;
+    let th = 18 + gap;
+    let width = cols * tw;
+    let height = rows * th;
+    let mut rgba = vec![0u8; width * height * 4];
+    for p in rgba.chunks_exact_mut(4) {
+        p[0] = 14;
+        p[1] = 16;
+        p[2] = 22;
+        p[3] = 255;
+    }
+
+    for t in 0..max_tiles {
+        let c = &decompressed[t * 27..(t + 1) * 27];
+        let tx = (t % cols) * tw;
+        let ty = (t / cols) * th;
+        for pair in 0..9 {
+            let b0 = c[pair * 3] as u16;
+            let b1 = c[pair * 3 + 1] as u16;
+            let b2 = c[pair * 3 + 2] as u16;
+            let r1 = ((b0 & 0xF0) << 4) | (b2 & 0xF0) | (b1 >> 4);
+            let r2 = ((b0 & 0x0F) << 8) | ((b2 & 0x0F) << 4) | (b1 & 0x0F);
+            for x in 0..12 {
+                if (r1 & (0x800 >> x)) != 0 {
+                    let idx = ((ty + pair * 2) * width + (tx + x)) * 4;
+                    rgba[idx] = 240;
+                    rgba[idx + 1] = 242;
+                    rgba[idx + 2] = 255;
+                }
+                if (r2 & (0x800 >> x)) != 0 {
+                    let idx = ((ty + pair * 2 + 1) * width + (tx + x)) * 4;
+                    rgba[idx] = 240;
+                    rgba[idx + 1] = 242;
+                    rgba[idx + 2] = 255;
+                }
+            }
+        }
+    }
+    egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba)
+}
+
 #[derive(Clone, Default)]
 struct InspectorData {
     file_path: std::path::PathBuf,
@@ -864,6 +1026,7 @@ struct InspectorData {
     has_boot_logo: bool,
     logo_type_desc: String,
     logo_color_image: Option<egui::ColorImage>,
+    vlc_blocks: Vec<VlcBlockInfo>,
 }
 
 struct RtdStudioApp {
@@ -898,6 +1061,9 @@ struct RtdStudioApp {
     inspector_custom_logo_invert: bool,
     inspector_custom_logo_processed: Option<ProcessedLogo>,
     inspector_custom_logo_tex: Option<egui::TextureHandle>,
+    inspector_vlc_selected: usize,
+    inspector_vlc_cols: usize,
+    inspector_vlc_gap: bool,
 
     // Search
     panelook_search_query: String,
@@ -964,6 +1130,9 @@ impl Default for RtdStudioApp {
             inspector_custom_logo_invert: false,
             inspector_custom_logo_processed: None,
             inspector_custom_logo_tex: None,
+            inspector_vlc_selected: 0,
+            inspector_vlc_cols: 16,
+            inspector_vlc_gap: true,
             panelook_search_query: String::new(),
             logo_mode: 0, // Default to Fast Boot (No Logo) for clean instant turn-on
             logo_file_path: None,
@@ -1254,18 +1423,35 @@ impl RtdStudioApp {
                 }
             }
 
-            let vlc_offset = data
-                .windows(6)
-                .position(|w| w == [0x24, 0x49, 0x92, 0x24, 0x49, 0x92]);
+            let vlc_blocks = scan_realtek_vlc_blocks(&data);
+            let mut best_vlc_idx = 0usize;
+            if !vlc_blocks.is_empty() {
+                // Prefer the first large graphic/logo block (100..=300 tiles, e.g. 0x022450 in Huawei), else largest block
+                if let Some((idx, _)) = vlc_blocks.iter().enumerate().find(|(_, b)| (100..=300).contains(&b.tile_count)) {
+                    best_vlc_idx = idx;
+                } else if let Some((idx, _)) = vlc_blocks.iter().enumerate().max_by_key(|(_, b)| b.tile_count) {
+                    best_vlc_idx = idx;
+                }
+                if logo_color_image.is_none() {
+                    let blk = &vlc_blocks[best_vlc_idx];
+                    logo_color_image = Some(render_vlc_tiles(&blk.decompressed, 16, 1));
+                }
+            }
 
             let logo_type_desc = if has_boot_logo {
                 "Bank 06 1-bit Bitmap (0x064000)".to_string()
-            } else if let Some(off) = vlc_offset {
-                format!("Realtek Hardware VLC Bitstream (~0x{:06X}, proprietary compression)", off)
+            } else if !vlc_blocks.is_empty() {
+                let blk = &vlc_blocks[best_vlc_idx];
+                format!(
+                    "Realtek Hardware VLC ({} blocks decoded — active: 0x{:06X}, {} tiles @ 12x18)",
+                    vlc_blocks.len(),
+                    blk.offset,
+                    blk.tile_count
+                )
             } else if fname.contains("无LOGO") || (data.len() > 0x00015 && data[0x00015] == 0x00) {
                 "Disabled / Neutral Boot (Fast Boot mode)".to_string()
             } else {
-                "No raw Bank 06 bitmap detected".to_string()
+                "No raw Bank 06 bitmap or VLC blocks detected".to_string()
             };
 
             self.inspector_logo_tex = None;
@@ -1273,6 +1459,9 @@ impl RtdStudioApp {
             self.inspector_custom_logo_bytes = None;
             self.inspector_custom_logo_processed = None;
             self.inspector_custom_logo_tex = None;
+            self.inspector_vlc_selected = best_vlc_idx;
+            self.inspector_vlc_cols = 16;
+            self.inspector_vlc_gap = true;
 
             self.inspector_edit_name = monitor_name.clone();
             self.inspector_status = None;
@@ -1308,6 +1497,7 @@ impl RtdStudioApp {
                 has_boot_logo,
                 logo_type_desc,
                 logo_color_image,
+                vlc_blocks,
             });
         }
     }
@@ -2606,11 +2796,62 @@ impl eframe::App for RtdStudioApp {
                             }
 
                             ui.separator();
-                            ui.label(egui::RichText::new("Boot Behavior & Splash Logo:").strong());
+                            ui.label(egui::RichText::new("Boot Behavior, Splash Logo & Hardware VLC Graphics:").strong());
                             ui.horizontal(|ui| {
                                 ui.label(egui::RichText::new("• Architecture Splash :").strong());
                                 ui.colored_label(egui::Color32::from_rgb(100, 220, 255), &data.logo_type_desc);
                             });
+
+                            let mut refresh_vlc_tex = false;
+                            if !data.has_boot_logo && !data.vlc_blocks.is_empty() {
+                                ui.horizontal(|ui| {
+                                    ui.label("• VLC Block:");
+                                    let sel = self.inspector_vlc_selected.min(data.vlc_blocks.len() - 1);
+                                    let cur = &data.vlc_blocks[sel];
+                                    egui::ComboBox::from_id_salt("inspector_vlc_combo")
+                                        .selected_text(format!(
+                                            "0x{:06X} ({} tiles, {} B compressed)",
+                                            cur.offset, cur.tile_count, cur.compressed_len
+                                        ))
+                                        .show_ui(ui, |ui| {
+                                            for (idx, blk) in data.vlc_blocks.iter().enumerate() {
+                                                let label = format!(
+                                                    "#{:02} @ 0x{:06X} — {} tiles ({} B)",
+                                                    idx + 1,
+                                                    blk.offset,
+                                                    blk.tile_count,
+                                                    blk.compressed_len
+                                                );
+                                                if ui.selectable_value(&mut self.inspector_vlc_selected, idx, label).clicked() {
+                                                    refresh_vlc_tex = true;
+                                                }
+                                            }
+                                        });
+
+                                    ui.label("Cols:");
+                                    if ui.add(egui::Slider::new(&mut self.inspector_vlc_cols, 8..=32)).changed() {
+                                        refresh_vlc_tex = true;
+                                    }
+                                    if ui.checkbox(&mut self.inspector_vlc_gap, "Grid").changed() {
+                                        refresh_vlc_tex = true;
+                                    }
+                                });
+                            }
+
+                            if refresh_vlc_tex && !data.vlc_blocks.is_empty() {
+                                let sel = self.inspector_vlc_selected.min(data.vlc_blocks.len() - 1);
+                                let blk = &data.vlc_blocks[sel];
+                                let img = render_vlc_tiles(
+                                    &blk.decompressed,
+                                    self.inspector_vlc_cols,
+                                    if self.inspector_vlc_gap { 1 } else { 0 },
+                                );
+                                self.inspector_logo_tex = Some(ui.ctx().load_texture(
+                                    "inspector_logo_tex",
+                                    img,
+                                    egui::TextureOptions::NEAREST,
+                                ));
+                            }
 
                             ui.columns(2, |cols| {
                                 cols[0].vertical(|ui| {
@@ -2622,16 +2863,19 @@ impl eframe::App for RtdStudioApp {
                                             ui.set_min_size(egui::vec2(ui.available_width(), 96.0));
                                             ui.vertical_centered(|ui| {
                                                 if let Some(tex) = &self.inspector_logo_tex {
-                                                    let display_size = egui::vec2(tex.size()[0] as f32 * 1.4, tex.size()[1] as f32 * 1.4);
-                                                    ui.label(egui::RichText::new("Bank 06 Splash Preview").weak());
+                                                    let title = if data.has_boot_logo {
+                                                        "Bank 06 Splash Preview"
+                                                    } else {
+                                                        "Decoded Realtek Hardware VLC Graphics (12x18 Tiles)"
+                                                    };
+                                                    ui.label(egui::RichText::new(title).weak());
+                                                    let avail_w = (ui.available_width() - 12.0).max(160.0);
+                                                    let scale = (avail_w / tex.size()[0] as f32).min(1.6).max(0.5);
+                                                    let display_size = egui::vec2(tex.size()[0] as f32 * scale, tex.size()[1] as f32 * scale);
                                                     ui.image((tex.id(), display_size));
-                                                } else if data.logo_type_desc.contains("VLC") {
-                                                    ui.add_space(22.0);
-                                                    ui.colored_label(egui::Color32::from_rgb(255, 190, 70), "[Realtek Hardware VLC Compressed Logo]");
-                                                    ui.label(egui::RichText::new("Proprietary silicon bitstream (not raw 1-bit bitmap)").weak());
                                                 } else {
                                                     ui.add_space(22.0);
-                                                    ui.label(egui::RichText::new("[No Bank 06 Bitmap]").weak());
+                                                    ui.label(egui::RichText::new("[No Bank 06 Bitmap or VLC Graphics]").weak());
                                                     ui.label(egui::RichText::new("Direct display initialization").weak());
                                                 }
                                             });
