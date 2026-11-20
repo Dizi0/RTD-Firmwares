@@ -790,6 +790,7 @@ struct InspectorData {
     dual_boot_mirrored: bool,
     ddcci_supported: bool,
     has_boot_logo: bool,
+    logo_type_desc: String,
     logo_color_image: Option<egui::ColorImage>,
 }
 
@@ -1181,6 +1182,16 @@ impl RtdStudioApp {
                 }
             }
 
+            let logo_type_desc = if has_boot_logo {
+                "Bank 06 1-bit Bitmap (Generic DIY Board)".to_string()
+            } else if dual_boot_mirrored || filesize == 1048576 || (fname.contains("HUAWEI") && !fname.contains("无LOGO")) {
+                "OEM OSD Font-Tile Splash (Commercial Monitor, Bank 02/03)".to_string()
+            } else if fname.contains("无LOGO") || (data.len() > 0x00015 && data[0x00015] == 0x00) {
+                "Disabled / Neutral Boot (Fast Boot mode)".to_string()
+            } else {
+                "No standard Bank 06 splash bitmap detected".to_string()
+            };
+
             self.inspector_logo_tex = None;
             self.inspector_show_logo_editor = false;
             self.inspector_custom_logo_bytes = None;
@@ -1219,6 +1230,7 @@ impl RtdStudioApp {
                 dual_boot_mirrored,
                 ddcci_supported,
                 has_boot_logo,
+                logo_type_desc,
                 logo_color_image,
             });
         }
@@ -1413,7 +1425,7 @@ impl RtdStudioApp {
                     self.inspect_file(&target_path);
                     self.inspector_status = Some((
                         format!(
-                            "Fast Boot patched successfully!\n• Boot bypass active (Instant <1.0s HDMI sync)\n• New Checksum: 0x{:04X}\n• Saved: {}",
+                            "Fast Boot patched successfully!\n• Splash screen bypass flag set (0x00015 = 0x00)\n• New Checksum: 0x{:04X}\n• Saved: {}",
                             new_checksum,
                             target_path.file_name().unwrap_or_default().to_string_lossy()
                         ),
@@ -2517,13 +2529,10 @@ impl eframe::App for RtdStudioApp {
                             }
 
                             ui.separator();
-                            ui.label(egui::RichText::new("Boot Behavior & Splash Logo (Bank 06):").strong());
+                            ui.label(egui::RichText::new("Boot Behavior & Splash Logo:").strong());
                             ui.horizontal(|ui| {
-                                if data.has_boot_logo {
-                                    ui.colored_label(egui::Color32::LIGHT_GREEN, "• Active OEM Splash Logo: Found in Bank 06 (0x064000) - 128x64 px");
-                                } else {
-                                    ui.colored_label(egui::Color32::from_rgb(255, 180, 50), "• Splash Logo: Fast Boot / Blank (Instant HDMI Sync in < 1s)");
-                                }
+                                ui.label(egui::RichText::new("• Architecture Splash :").strong());
+                                ui.colored_label(egui::Color32::from_rgb(100, 220, 255), &data.logo_type_desc);
                             });
 
                             ui.horizontal(|ui| {
@@ -2536,25 +2545,29 @@ impl eframe::App for RtdStudioApp {
                                         ui.vertical_centered(|ui| {
                                             if let Some(tex) = &self.inspector_logo_tex {
                                                 let display_size = egui::vec2(tex.size()[0] as f32 * 1.5, tex.size()[1] as f32 * 1.5);
-                                                ui.label(egui::RichText::new("Current Firmware Splash").weak());
+                                                ui.label(egui::RichText::new("Bank 06 Splash Preview").weak());
                                                 ui.image((tex.id(), display_size));
+                                            } else if data.dual_boot_mirrored || data.filename.contains("HUAWEI") {
+                                                ui.add_space(20.0);
+                                                ui.colored_label(egui::Color32::LIGHT_GREEN, "[OEM Commercial Splash]");
+                                                ui.label(egui::RichText::new("Rendered via OSD Font Tiles (Bank 02/03)").weak());
                                             } else {
                                                 ui.add_space(20.0);
-                                                ui.label(egui::RichText::new("[No OEM Logo - Fast Boot]").weak());
-                                                ui.label(egui::RichText::new("Monitor powers on in < 1s").weak());
+                                                ui.label(egui::RichText::new("[No Bank 06 Bitmap - Splash Disabled]").weak());
+                                                ui.label(egui::RichText::new("Direct display initialization").weak());
                                             }
                                         });
                                     });
 
                                 ui.vertical(|ui| {
-                                    if ui.button(if self.inspector_show_logo_editor { "Hide Logo Patcher" } else { "Change / Inject Custom Logo..." })
+                                    if ui.button(if self.inspector_show_logo_editor { "Hide Logo Patcher" } else { "Change / Inject Custom Logo (Bank 06)..." })
                                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                                         .clicked()
                                     {
                                         self.inspector_show_logo_editor = !self.inspector_show_logo_editor;
                                     }
 
-                                    if ui.button("Strip Logo (Enable Fast Boot < 1s)")
+                                    if ui.button("Disable Splash Screen (Fast Boot Flag)")
                                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                                         .clicked()
                                     {
@@ -2566,7 +2579,14 @@ impl eframe::App for RtdStudioApp {
                             if self.inspector_show_logo_editor {
                                 ui.add_space(6.0);
                                 ui.group(|ui| {
-                                    ui.label(egui::RichText::new("Custom Boot Logo Patcher:").strong());
+                                    ui.label(egui::RichText::new("Custom Boot Logo Patcher (Bank 06):").strong());
+                                    if data.dual_boot_mirrored || data.filename.contains("HUAWEI") {
+                                        ui.colored_label(
+                                            egui::Color32::from_rgb(255, 190, 70),
+                                            "Notice: This commercial monitor uses OSD font tiles (Bank 02/03) for its factory splash.\nCustom Bank 06 bitmap injection is designed for generic DIY driver boards (JG2555TB / RTD2556).",
+                                        );
+                                        ui.add_space(4.0);
+                                    }
                                     ui.horizontal(|ui| {
                                         if ui.button("Load Image (PNG / JPEG / BMP)...").clicked() {
                                             trigger_pick_inspector_logo = true;
