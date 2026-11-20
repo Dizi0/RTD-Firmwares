@@ -2383,6 +2383,7 @@ impl eframe::App for RtdStudioApp {
                 }
 
                 1 => {
+                    egui::ScrollArea::vertical().show(ui, |ui| {
                     ui.heading("Binary Inspector & Diagnostic");
                     ui.label("Decode and inspect any Realtek RTD .bin firmware image, verify bank integrity and inspect VESA EDID descriptors.");
                     ui.add_space(10.0);
@@ -2535,39 +2536,45 @@ impl eframe::App for RtdStudioApp {
                                 ui.colored_label(egui::Color32::from_rgb(100, 220, 255), &data.logo_type_desc);
                             });
 
-                            ui.horizontal(|ui| {
-                                egui::Frame::canvas(ui.style())
-                                    .fill(egui::Color32::from_rgb(10, 11, 14))
-                                    .stroke(egui::Stroke::new(1.5, egui::Color32::from_rgb(50, 54, 62)))
-                                    .inner_margin(6.0)
-                                    .show(ui, |ui| {
-                                        ui.set_min_size(egui::vec2(220.0, 90.0));
-                                        ui.vertical_centered(|ui| {
-                                            if let Some(tex) = &self.inspector_logo_tex {
-                                                let display_size = egui::vec2(tex.size()[0] as f32 * 1.5, tex.size()[1] as f32 * 1.5);
-                                                ui.label(egui::RichText::new("Bank 06 Splash Preview").weak());
-                                                ui.image((tex.id(), display_size));
-                                            } else if data.dual_boot_mirrored || data.filename.contains("HUAWEI") {
-                                                ui.add_space(20.0);
-                                                ui.colored_label(egui::Color32::LIGHT_GREEN, "[OEM Commercial Splash]");
-                                                ui.label(egui::RichText::new("Rendered via OSD Font Tiles (Bank 02/03)").weak());
-                                            } else {
-                                                ui.add_space(20.0);
-                                                ui.label(egui::RichText::new("[No Bank 06 Bitmap - Splash Disabled]").weak());
-                                                ui.label(egui::RichText::new("Direct display initialization").weak());
-                                            }
+                            ui.columns(2, |cols| {
+                                cols[0].vertical(|ui| {
+                                    egui::Frame::canvas(ui.style())
+                                        .fill(egui::Color32::from_rgb(10, 11, 14))
+                                        .stroke(egui::Stroke::new(1.5, egui::Color32::from_rgb(50, 54, 62)))
+                                        .inner_margin(8.0)
+                                        .show(ui, |ui| {
+                                            ui.set_min_size(egui::vec2(ui.available_width(), 96.0));
+                                            ui.vertical_centered(|ui| {
+                                                if let Some(tex) = &self.inspector_logo_tex {
+                                                    let display_size = egui::vec2(tex.size()[0] as f32 * 1.4, tex.size()[1] as f32 * 1.4);
+                                                    ui.label(egui::RichText::new("Bank 06 Splash Preview").weak());
+                                                    ui.image((tex.id(), display_size));
+                                                } else if data.dual_boot_mirrored || data.filename.contains("HUAWEI") {
+                                                    ui.add_space(22.0);
+                                                    ui.colored_label(egui::Color32::LIGHT_GREEN, "[OEM Commercial Splash]");
+                                                    ui.label(egui::RichText::new("Hardware-compressed OSD tiles (Bank 02/03)").weak());
+                                                } else {
+                                                    ui.add_space(22.0);
+                                                    ui.label(egui::RichText::new("[No Bank 06 Bitmap - Splash Disabled]").weak());
+                                                    ui.label(egui::RichText::new("Direct display initialization").weak());
+                                                }
+                                            });
                                         });
-                                    });
+                                });
 
-                                ui.vertical(|ui| {
-                                    if ui.button(if self.inspector_show_logo_editor { "Hide Logo Patcher" } else { "Change / Inject Custom Logo (Bank 06)..." })
+                                cols[1].vertical(|ui| {
+                                    ui.add_space(8.0);
+                                    if ui.add_sized([ui.available_width().min(280.0), 30.0], egui::Button::new(
+                                        if self.inspector_show_logo_editor { "Hide Logo Patcher" } else { "Change / Inject Custom Logo (Bank 06)..." }
+                                    ))
                                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                                         .clicked()
                                     {
                                         self.inspector_show_logo_editor = !self.inspector_show_logo_editor;
                                     }
 
-                                    if ui.button("Disable Splash Screen (Fast Boot Flag)")
+                                    ui.add_space(6.0);
+                                    if ui.add_sized([ui.available_width().min(280.0), 30.0], egui::Button::new("Disable Splash Screen (Fast Boot Flag)"))
                                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                                         .clicked()
                                     {
@@ -2626,23 +2633,25 @@ impl eframe::App for RtdStudioApp {
                                         });
 
                                         if let Some(tex) = &self.inspector_custom_logo_tex {
-                                            ui.horizontal(|ui| {
-                                                egui::Frame::canvas(ui.style())
-                                                    .fill(egui::Color32::from_rgb(10, 11, 14))
-                                                    .stroke(egui::Stroke::new(1.5, egui::Color32::from_rgb(0, 180, 220)))
-                                                    .inner_margin(6.0)
-                                                    .show(ui, |ui| {
-                                                        ui.set_min_size(egui::vec2(220.0, 90.0));
-                                                        ui.vertical_centered(|ui| {
-                                                            ui.label(egui::RichText::new("New Custom Splash Preview").strong());
-                                                            let display_size = egui::vec2(tex.size()[0] as f32 * 1.5, tex.size()[1] as f32 * 1.5);
-                                                            ui.image((tex.id(), display_size));
+                                            ui.columns(2, |cols| {
+                                                cols[0].vertical(|ui| {
+                                                    egui::Frame::canvas(ui.style())
+                                                        .fill(egui::Color32::from_rgb(10, 11, 14))
+                                                        .stroke(egui::Stroke::new(1.5, egui::Color32::from_rgb(0, 180, 220)))
+                                                        .inner_margin(8.0)
+                                                        .show(ui, |ui| {
+                                                            ui.set_min_size(egui::vec2(ui.available_width(), 96.0));
+                                                            ui.vertical_centered(|ui| {
+                                                                ui.label(egui::RichText::new("New Custom Splash Preview").strong());
+                                                                let display_size = egui::vec2(tex.size()[0] as f32 * 1.4, tex.size()[1] as f32 * 1.4);
+                                                                ui.image((tex.id(), display_size));
+                                                            });
                                                         });
-                                                    });
+                                                });
 
-                                                ui.vertical(|ui| {
-                                                    ui.add_space(20.0);
-                                                    if ui.button(egui::RichText::new("Inject Logo & Save Patched Firmware (.bin)...").strong())
+                                                cols[1].vertical(|ui| {
+                                                    ui.add_space(28.0);
+                                                    if ui.add_sized([ui.available_width().min(300.0), 34.0], egui::Button::new(egui::RichText::new("Inject Logo & Save Patched (.bin)...").strong()))
                                                         .on_hover_cursor(egui::CursorIcon::PointingHand)
                                                         .clicked()
                                                     {
@@ -2688,6 +2697,7 @@ impl eframe::App for RtdStudioApp {
                     if trigger_patch_fast_boot {
                         self.patch_fast_boot_inspected_firmware();
                     }
+                    });
                 }
 
                 2 => {
