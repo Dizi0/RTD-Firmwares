@@ -734,6 +734,32 @@ fn detect_embedded_panel(data: &[u8]) -> Option<String> {
     None
 }
 
+fn unpack_1bit_logo(data: &[u8], width: usize, height: usize) -> egui::ColorImage {
+    let mut rgba = Vec::with_capacity(width * height * 4);
+    for y in 0..height {
+        for x in 0..width {
+            let pixel_idx = y * width + x;
+            let byte_idx = pixel_idx / 8;
+            let bit_pos = pixel_idx % 8;
+            let is_set = if byte_idx < data.len() {
+                (data[byte_idx] & (1 << bit_pos)) != 0
+            } else {
+                false
+            };
+            let (r, g, b, a) = if is_set {
+                (240, 240, 245, 255)
+            } else {
+                (14, 16, 20, 255)
+            };
+            rgba.push(r);
+            rgba.push(g);
+            rgba.push(b);
+            rgba.push(a);
+        }
+    }
+    egui::ColorImage::from_rgba_unmultiplied([width, height], &rgba)
+}
+
 #[derive(Clone, Default)]
 struct InspectorData {
     file_path: std::path::PathBuf,
@@ -758,6 +784,13 @@ struct InspectorData {
     status: String,
     notes: Vec<String>,
     embedded_panel: Option<String>,
+    scaler_ic: Option<String>,
+    oem_version: Option<String>,
+    build_date: Option<String>,
+    dual_boot_mirrored: bool,
+    ddcci_supported: bool,
+    has_boot_logo: bool,
+    logo_color_image: Option<egui::ColorImage>,
 }
 
 struct RtdStudioApp {
@@ -783,6 +816,15 @@ struct RtdStudioApp {
     inspector_data: Option<InspectorData>,
     inspector_edit_name: String,
     inspector_status: Option<(String, bool)>,
+    inspector_logo_tex: Option<egui::TextureHandle>,
+    inspector_show_logo_editor: bool,
+    inspector_custom_logo_bytes: Option<Vec<u8>>,
+    inspector_custom_logo_res_idx: usize,
+    inspector_custom_logo_threshold: u8,
+    inspector_custom_logo_dither: bool,
+    inspector_custom_logo_invert: bool,
+    inspector_custom_logo_processed: Option<ProcessedLogo>,
+    inspector_custom_logo_tex: Option<egui::TextureHandle>,
 
     // Search
     panelook_search_query: String,
@@ -840,6 +882,15 @@ impl Default for RtdStudioApp {
             inspector_data: None,
             inspector_edit_name: String::new(),
             inspector_status: None,
+            inspector_logo_tex: None,
+            inspector_show_logo_editor: false,
+            inspector_custom_logo_bytes: None,
+            inspector_custom_logo_res_idx: 0,
+            inspector_custom_logo_threshold: 128,
+            inspector_custom_logo_dither: true,
+            inspector_custom_logo_invert: false,
+            inspector_custom_logo_processed: None,
+            inspector_custom_logo_tex: None,
             panelook_search_query: String::new(),
             logo_mode: 0, // Default to Fast Boot (No Logo) for clean instant turn-on
             logo_file_path: None,
@@ -1074,6 +1125,68 @@ impl RtdStudioApp {
 
             let embedded_panel = detect_embedded_panel(&data);
 
+            let mut scaler_ic = None;
+            let known_scalers = ["RTD2513AR-CG", "RTD2513AR", "RTD2556T", "RTD2556", "RTD2537T-CG", "RTD2537T", "RTD2172", "RTD2795", "RTD2796", "RTD2483", "JG2555TB"];
+            for s in &known_scalers {
+                if data.windows(s.len()).any(|w| w == s.as_bytes()) {
+                    scaler_ic = Some(s.to_string());
+                    break;
+                }
+            }
+
+            let dual_boot_mirrored = if filesize == 1048576 {
+                data[0..524288] == data[524288..1048576]
+            } else {
+                false
+            };
+
+            let mut oem_version = None;
+            for window in data.windows(5) {
+                if window.starts_with(b"VP") && window[2].is_ascii_digit() && window[3] == b'.' {
+                    if let Ok(s) = std::str::from_utf8(&window[0..5]) {
+                        oem_version = Some(s.to_string());
+                        break;
+                    }
+                }
+            }
+
+            let mut build_date = None;
+            if let Some(pos) = data.windows(8).position(|w| {
+                (w.starts_with(b"201") || w.starts_with(b"202")) && w.iter().all(|b| b.is_ascii_digit())
+            }) {
+                if let Ok(s) = std::str::from_utf8(&data[pos..pos + 8]) {
+                    build_date = Some(s.to_string());
+                }
+            } else if let Some(pos) = data.windows(6).position(|w| {
+                (w.starts_with(b"21") || w.starts_with(b"22") || w.starts_with(b"20")) && w.iter().all(|b| b.is_ascii_digit())
+            }) {
+                if let Ok(s) = std::str::from_utf8(&data[pos..pos + 6]) {
+                    build_date = Some(format!("20{}", s));
+                }
+            }
+
+            let ddcci_supported = data.windows(13).any(|w| w == b"prot(monitor)")
+                || data.windows(4).any(|w| w == b"vcp(")
+                || data.windows(9).any(|w| w == b"type(lcd)");
+
+            let mut has_boot_logo = false;
+            let mut logo_color_image = None;
+            if data.len() >= 0x064000 + 1024 {
+                let logo_slice = &data[0x064000..0x064000 + 1024];
+                let non_empty = logo_slice.iter().any(|&b| b != 0x00 && b != 0xFF);
+                let fast_boot_disabled = if data.len() > 0x00015 { data[0x00015] != 0x00 } else { true };
+                if non_empty && fast_boot_disabled {
+                    has_boot_logo = true;
+                    logo_color_image = Some(unpack_1bit_logo(logo_slice, 128, 64));
+                }
+            }
+
+            self.inspector_logo_tex = None;
+            self.inspector_show_logo_editor = false;
+            self.inspector_custom_logo_bytes = None;
+            self.inspector_custom_logo_processed = None;
+            self.inspector_custom_logo_tex = None;
+
             self.inspector_edit_name = monitor_name.clone();
             self.inspector_status = None;
 
@@ -1100,6 +1213,13 @@ impl RtdStudioApp {
                 status,
                 notes,
                 embedded_panel,
+                scaler_ic,
+                oem_version,
+                build_date,
+                dual_boot_mirrored,
+                ddcci_supported,
+                has_boot_logo,
+                logo_color_image,
             });
         }
     }
@@ -1169,6 +1289,132 @@ impl RtdStudioApp {
                             "Firmware updated successfully!\nNew Checksum: 0x{:04X}\nMonitor Name: {}\nSaved to: {}",
                             new_checksum,
                             clean_name,
+                            target_path.file_name().unwrap_or_default().to_string_lossy()
+                        ),
+                        true,
+                    ));
+                }
+                Err(e) => {
+                    self.inspector_status = Some((format!("Failed to save firmware: {}", e), false));
+                }
+            }
+        }
+    }
+
+    fn refresh_inspector_custom_logo(&mut self, ctx: &egui::Context) {
+        if let Some(bytes) = &self.inspector_custom_logo_bytes {
+            let (tw, th, _) = LOGO_RESOLUTIONS[self.inspector_custom_logo_res_idx];
+            match process_logo_image(
+                bytes,
+                tw,
+                th,
+                self.inspector_custom_logo_threshold,
+                self.inspector_custom_logo_dither,
+                self.inspector_custom_logo_invert,
+            ) {
+                Ok(processed) => {
+                    let tex = ctx.load_texture("inspector_custom_logo_tex", processed.color_image.clone(), egui::TextureOptions::NEAREST);
+                    self.inspector_custom_logo_tex = Some(tex);
+                    self.inspector_custom_logo_processed = Some(processed);
+                    self.inspector_status = None;
+                }
+                Err(e) => {
+                    self.inspector_status = Some((format!("Logo conversion error: {}", e), false));
+                    self.inspector_custom_logo_processed = None;
+                    self.inspector_custom_logo_tex = None;
+                }
+            }
+        }
+    }
+
+    fn inject_logo_into_inspected_firmware(&mut self) {
+        let (mut binary, orig_path, dual_mirrored) = match &self.inspector_data {
+            Some(d) => (d.raw_data.clone(), d.file_path.clone(), d.dual_boot_mirrored),
+            None => return,
+        };
+        let Some(processed) = &self.inspector_custom_logo_processed else {
+            self.inspector_status = Some(("No custom image loaded to inject. Click 'Load Image' first.".to_string(), false));
+            return;
+        };
+
+        let target_offset = 0x064000;
+        if binary.len() < target_offset + processed.packed_1bit.len() {
+            self.inspector_status = Some(("Firmware file is too small for Bank 06 logo injection.".to_string(), false));
+            return;
+        }
+
+        binary[target_offset..target_offset + processed.packed_1bit.len()].copy_from_slice(&processed.packed_1bit);
+
+        if dual_mirrored && binary.len() >= 0x0E4000 + processed.packed_1bit.len() {
+            binary[0x0E4000..0x0E4000 + processed.packed_1bit.len()].copy_from_slice(&processed.packed_1bit);
+        }
+
+        if binary.len() > 0x00015 {
+            binary[0x00015] = 0x01;
+        }
+        if dual_mirrored && binary.len() > 0x80015 {
+            binary[0x80015] = 0x01;
+        }
+
+        let new_checksum = binary.iter().fold(0u16, |acc, &b| acc.wrapping_add(b as u16));
+        let orig_stem = orig_path.file_stem().unwrap_or_default().to_string_lossy();
+        let suggested_filename = format!("{}_CUSTOM_LOGO_{:04X}.bin", orig_stem, new_checksum);
+
+        if let Some(target_path) = rfd::FileDialog::new()
+            .set_file_name(&suggested_filename)
+            .add_filter("Realtek Firmware (.bin)", &["bin"])
+            .save_file()
+        {
+            match fs::write(&target_path, &binary) {
+                Ok(_) => {
+                    self.inspect_file(&target_path);
+                    self.inspector_status = Some((
+                        format!(
+                            "Custom splash logo successfully injected!\n• Location: Bank 06 (0x{:06X}){}\n• New Checksum: 0x{:04X}\n• Saved: {}",
+                            target_offset,
+                            if dual_mirrored { " + Bank 0E (0x0E4000 mirrored)" } else { "" },
+                            new_checksum,
+                            target_path.file_name().unwrap_or_default().to_string_lossy()
+                        ),
+                        true,
+                    ));
+                }
+                Err(e) => {
+                    self.inspector_status = Some((format!("Failed to save firmware: {}", e), false));
+                }
+            }
+        }
+    }
+
+    fn patch_fast_boot_inspected_firmware(&mut self) {
+        let (mut binary, orig_path, dual_mirrored) = match &self.inspector_data {
+            Some(d) => (d.raw_data.clone(), d.file_path.clone(), d.dual_boot_mirrored),
+            None => return,
+        };
+
+        if binary.len() > 0x00015 {
+            binary[0x00015] = 0x00;
+        }
+        if dual_mirrored && binary.len() > 0x80015 {
+            binary[0x80015] = 0x00;
+        }
+
+        let new_checksum = binary.iter().fold(0u16, |acc, &b| acc.wrapping_add(b as u16));
+        let orig_stem = orig_path.file_stem().unwrap_or_default().to_string_lossy();
+        let suggested_filename = format!("{}_FASTBOOT_NOLOGO_{:04X}.bin", orig_stem, new_checksum);
+
+        if let Some(target_path) = rfd::FileDialog::new()
+            .set_file_name(&suggested_filename)
+            .add_filter("Realtek Firmware (.bin)", &["bin"])
+            .save_file()
+        {
+            match fs::write(&target_path, &binary) {
+                Ok(_) => {
+                    self.inspect_file(&target_path);
+                    self.inspector_status = Some((
+                        format!(
+                            "Fast Boot patched successfully!\n• Boot bypass active (Instant <1.0s HDMI sync)\n• New Checksum: 0x{:04X}\n• Saved: {}",
+                            new_checksum,
                             target_path.file_name().unwrap_or_default().to_string_lossy()
                         ),
                         true,
@@ -2156,14 +2402,72 @@ impl eframe::App for RtdStudioApp {
 
                     ui.add_space(10.0);
                     let mut trigger_patch_save = false;
+                    let mut trigger_pick_inspector_logo = false;
+                    let mut trigger_refresh_inspector_logo = false;
+                    let mut trigger_inject_inspector_logo = false;
+                    let mut trigger_patch_fast_boot = false;
+
                     if let Some(data) = &self.inspector_data {
+                        if self.inspector_logo_tex.is_none() {
+                            if let Some(img) = &data.logo_color_image {
+                                self.inspector_logo_tex = Some(ui.ctx().load_texture("inspector_logo_tex", img.clone(), egui::TextureOptions::NEAREST));
+                            }
+                        }
+
                         ui.group(|ui| {
                             ui.set_width(ui.available_width());
                             ui.heading(format!("File: {}", data.filename));
-                            ui.label(format!("• Status: {}", data.status));
-                            ui.label(format!("• Size: {} bytes ({} banks of 64 KB)", data.filesize, data.banks));
+
                             ui.horizontal(|ui| {
-                                ui.label(format!("• 16-bit Checksum: 0x{:04X}", data.checksum));
+                                ui.label(egui::RichText::new("• Architecture :").strong());
+                                if data.dual_boot_mirrored {
+                                    ui.colored_label(egui::Color32::from_rgb(100, 220, 255), "Dual-Boot Fail-Safe A/B Partitioning (1024 KB SPI Flash - 2x 512 KB Mirrored Banks)");
+                                } else {
+                                    ui.label(format!("Single Partition Flash ({} bytes, {} banks of 64 KB)", data.filesize, data.banks));
+                                }
+                            });
+
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("• Scaler IC :").strong());
+                                if let Some(ref ic) = data.scaler_ic {
+                                    ui.colored_label(egui::Color32::from_rgb(0, 255, 200), format!("Realtek {}", ic));
+                                } else {
+                                    ui.label("Realtek RTD Series (Standard 8051)");
+                                }
+
+                                if let Some(ref ver) = data.oem_version {
+                                    ui.label(egui::RichText::new("• OEM Ver:").strong());
+                                    ui.colored_label(egui::Color32::LIGHT_BLUE, ver);
+                                }
+                                if let Some(ref dt) = data.build_date {
+                                    ui.label(egui::RichText::new("• Build Date:").strong());
+                                    ui.colored_label(egui::Color32::LIGHT_BLUE, dt);
+                                }
+                            });
+
+                            if let Some(panel) = &data.embedded_panel {
+                                ui.horizontal(|ui| {
+                                    ui.label(egui::RichText::new("• Detected Panel ID :").strong());
+                                    ui.colored_label(egui::Color32::from_rgb(0, 220, 255), panel);
+                                    if ui.button("Search in Panel Database").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                        self.panelook_search_query = panel.clone();
+                                        self.selected_tab = 2;
+                                    }
+                                });
+                            }
+
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("• DDC/CI MCCS :").strong());
+                                if data.ddcci_supported {
+                                    ui.colored_label(egui::Color32::LIGHT_GREEN, "Supported (VESA MCCS 2.0+ Query & Control Enabled)");
+                                } else {
+                                    ui.label("Standard DDC2B");
+                                }
+                            });
+
+                            ui.horizontal(|ui| {
+                                ui.label(egui::RichText::new("• 16-bit Checksum :").strong());
+                                ui.label(format!("0x{:04X}", data.checksum));
                                 if let Some(expected) = data.checksum_name {
                                     if data.checksum_match {
                                         ui.colored_label(egui::Color32::LIGHT_GREEN, format!("Matches filename tag (0x{:04X})", expected));
@@ -2194,24 +2498,8 @@ impl eframe::App for RtdStudioApp {
                                 }
                             });
 
-                            if let Some((msg, success)) = &self.inspector_status {
-                                ui.add_space(4.0);
-                                let color = if *success { egui::Color32::LIGHT_GREEN } else { egui::Color32::LIGHT_RED };
-                                ui.colored_label(color, msg);
-                            }
-
                             ui.separator();
                             ui.label(egui::RichText::new("Panel Parameters & Driving Signals:").strong());
-                            if let Some(panel) = &data.embedded_panel {
-                                ui.horizontal(|ui| {
-                                    ui.label("• Detected Panel ID :");
-                                    ui.colored_label(egui::Color32::from_rgb(0, 220, 255), panel);
-                                    if ui.button("Search in Panel Database").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
-                                        self.panelook_search_query = panel.clone();
-                                        self.selected_tab = 2;
-                                    }
-                                });
-                            }
                             ui.label(format!("• Native Resolution : {}", data.resolution));
                             ui.label(format!("• Refresh Rate      : {}", data.refresh_rate));
                             ui.label(format!("• Pixel Clock       : {}", data.pixel_clock));
@@ -2227,6 +2515,131 @@ impl eframe::App for RtdStudioApp {
                                     ui.label(format!("  - {}", note));
                                 }
                             }
+
+                            ui.separator();
+                            ui.label(egui::RichText::new("Boot Behavior & Splash Logo (Bank 06):").strong());
+                            ui.horizontal(|ui| {
+                                if data.has_boot_logo {
+                                    ui.colored_label(egui::Color32::LIGHT_GREEN, "• Active OEM Splash Logo: Found in Bank 06 (0x064000) - 128x64 px");
+                                } else {
+                                    ui.colored_label(egui::Color32::from_rgb(255, 180, 50), "• Splash Logo: Fast Boot / Blank (Instant HDMI Sync in < 1s)");
+                                }
+                            });
+
+                            ui.horizontal(|ui| {
+                                egui::Frame::canvas(ui.style())
+                                    .fill(egui::Color32::from_rgb(10, 11, 14))
+                                    .stroke(egui::Stroke::new(1.5, egui::Color32::from_rgb(50, 54, 62)))
+                                    .inner_margin(6.0)
+                                    .show(ui, |ui| {
+                                        ui.set_min_size(egui::vec2(220.0, 90.0));
+                                        ui.vertical_centered(|ui| {
+                                            if let Some(tex) = &self.inspector_logo_tex {
+                                                let display_size = egui::vec2(tex.size()[0] as f32 * 1.5, tex.size()[1] as f32 * 1.5);
+                                                ui.label(egui::RichText::new("Current Firmware Splash").weak());
+                                                ui.image((tex.id(), display_size));
+                                            } else {
+                                                ui.add_space(20.0);
+                                                ui.label(egui::RichText::new("[No OEM Logo - Fast Boot]").weak());
+                                                ui.label(egui::RichText::new("Monitor powers on in < 1s").weak());
+                                            }
+                                        });
+                                    });
+
+                                ui.vertical(|ui| {
+                                    if ui.button(if self.inspector_show_logo_editor { "Hide Logo Patcher" } else { "Change / Inject Custom Logo..." })
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                        .clicked()
+                                    {
+                                        self.inspector_show_logo_editor = !self.inspector_show_logo_editor;
+                                    }
+
+                                    if ui.button("Strip Logo (Enable Fast Boot < 1s)")
+                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                        .clicked()
+                                    {
+                                        trigger_patch_fast_boot = true;
+                                    }
+                                });
+                            });
+
+                            if self.inspector_show_logo_editor {
+                                ui.add_space(6.0);
+                                ui.group(|ui| {
+                                    ui.label(egui::RichText::new("Custom Boot Logo Patcher:").strong());
+                                    ui.horizontal(|ui| {
+                                        if ui.button("Load Image (PNG / JPEG / BMP)...").clicked() {
+                                            trigger_pick_inspector_logo = true;
+                                        }
+                                        if self.inspector_custom_logo_bytes.is_some() {
+                                            ui.colored_label(egui::Color32::LIGHT_GREEN, "Image loaded");
+                                        } else {
+                                            ui.label(egui::RichText::new("Choose an image to replace the splash").weak());
+                                        }
+                                    });
+
+                                    if self.inspector_custom_logo_bytes.is_some() {
+                                        ui.horizontal(|ui| {
+                                            ui.label("Resolution:");
+                                            for (idx, (_, _, desc)) in LOGO_RESOLUTIONS.iter().enumerate() {
+                                                let short_desc = desc.split(' ').next().unwrap_or(desc);
+                                                if ui.radio_value(&mut self.inspector_custom_logo_res_idx, idx, short_desc).clicked() {
+                                                    trigger_refresh_inspector_logo = true;
+                                                }
+                                            }
+                                        });
+
+                                        ui.horizontal(|ui| {
+                                            ui.label("Threshold:");
+                                            if ui.add(egui::Slider::new(&mut self.inspector_custom_logo_threshold, 0..=255)).changed() {
+                                                trigger_refresh_inspector_logo = true;
+                                            }
+                                        });
+
+                                        ui.horizontal(|ui| {
+                                            if ui.checkbox(&mut self.inspector_custom_logo_dither, "Floyd-Steinberg Dithering").changed() {
+                                                trigger_refresh_inspector_logo = true;
+                                            }
+                                            if ui.checkbox(&mut self.inspector_custom_logo_invert, "Invert Colors").changed() {
+                                                trigger_refresh_inspector_logo = true;
+                                            }
+                                        });
+
+                                        if let Some(tex) = &self.inspector_custom_logo_tex {
+                                            ui.horizontal(|ui| {
+                                                egui::Frame::canvas(ui.style())
+                                                    .fill(egui::Color32::from_rgb(10, 11, 14))
+                                                    .stroke(egui::Stroke::new(1.5, egui::Color32::from_rgb(0, 180, 220)))
+                                                    .inner_margin(6.0)
+                                                    .show(ui, |ui| {
+                                                        ui.set_min_size(egui::vec2(220.0, 90.0));
+                                                        ui.vertical_centered(|ui| {
+                                                            ui.label(egui::RichText::new("New Custom Splash Preview").strong());
+                                                            let display_size = egui::vec2(tex.size()[0] as f32 * 1.5, tex.size()[1] as f32 * 1.5);
+                                                            ui.image((tex.id(), display_size));
+                                                        });
+                                                    });
+
+                                                ui.vertical(|ui| {
+                                                    ui.add_space(20.0);
+                                                    if ui.button(egui::RichText::new("Inject Logo & Save Patched Firmware (.bin)...").strong())
+                                                        .on_hover_cursor(egui::CursorIcon::PointingHand)
+                                                        .clicked()
+                                                    {
+                                                        trigger_inject_inspector_logo = true;
+                                                    }
+                                                });
+                                            });
+                                        }
+                                    }
+                                });
+                            }
+
+                            if let Some((msg, success)) = &self.inspector_status {
+                                ui.add_space(6.0);
+                                let color = if *success { egui::Color32::LIGHT_GREEN } else { egui::Color32::LIGHT_RED };
+                                ui.colored_label(color, msg);
+                            }
                         });
                     } else {
                         ui.label(egui::RichText::new("No binary loaded. Click the button above to inspect any .bin firmware.").weak());
@@ -2234,6 +2647,26 @@ impl eframe::App for RtdStudioApp {
 
                     if trigger_patch_save {
                         self.save_inspector_modified_firmware();
+                    }
+                    if trigger_pick_inspector_logo {
+                        if let Some(path) = rfd::FileDialog::new()
+                            .add_filter("Image", &["png", "jpg", "jpeg", "bmp"])
+                            .pick_file()
+                        {
+                            if let Ok(bytes) = fs::read(&path) {
+                                self.inspector_custom_logo_bytes = Some(bytes);
+                                self.refresh_inspector_custom_logo(ui.ctx());
+                            }
+                        }
+                    }
+                    if trigger_refresh_inspector_logo {
+                        self.refresh_inspector_custom_logo(ui.ctx());
+                    }
+                    if trigger_inject_inspector_logo {
+                        self.inject_logo_into_inspected_firmware();
+                    }
+                    if trigger_patch_fast_boot {
+                        self.patch_fast_boot_inspected_firmware();
                     }
                 }
 
