@@ -50,7 +50,7 @@ The official Realtek hardware ISP flashing suites are included in the dedicated 
   * Direct executable: `flasher/RTDCustomerTool/RTDTool.exe`
   * Original ZIP: `flasher/RTDCustomerTool_V3.7_20190114.zip`
 * **Direct GPU Flashing (No Programmer Hardware Required)**:
-  * Using your PC's NVIDIA / AMD GPU and a standard HDMI cable, `RTDCustomerTool` can communicate with the board via DDC/CI I2C (`GFXI2C`) to dump or flash the firmware directly without any external USB-to-I2C programmer dongle.
+  * Discovered and documented by **Abdur Rouf ([@roufsweb](https://github.com/roufsweb))**: Using your PC's NVIDIA / AMD GPU and a standard HDMI cable, `RTDCustomerTool` can communicate with the board via DDC/CI I2C (`GFXI2C`) to dump or flash the firmware directly without any external USB-to-I2C programmer dongle.
 * **Step-by-step guide & GPU configuration**: See [Flashing Guide (`docs/flashing_guide.md`)](file:///d:/www/RTD-Firmwares/docs/flashing_guide.md).
 
 ---
@@ -138,3 +138,9 @@ Both tools are written in standard Rust (Edition 2021):
 cargo build --release --manifest-path tools/rtd-gui/Cargo.toml
 cargo build --release --manifest-path tools/rtd-cli/Cargo.toml
 ```
+
+---
+
+## 8. Acknowledgements & Credits
+
+* **Abdur Rouf ([@roufsweb](https://github.com/roufsweb))** ([portable-display](https://github.com/roufsweb/portable-display)): For researching, uncovering, and documenting the zero-dongle direct GPU HDMI flashing method via DDC/CI (`Comm_GFXI2C.dll`), the multi-monitor `ErrorCode:0xA` bypass, and the PWM backlight divisor bug analysis.

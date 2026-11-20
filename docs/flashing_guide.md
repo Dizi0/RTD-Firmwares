@@ -24,6 +24,10 @@ Run `RTDTool.exe` as Administrator on Windows.
 
 ## 2. Method A: Direct GPU Flashing via HDMI (No Hardware Programmer Needed)
 
+> [!NOTE]
+> **Credits & Acknowledgements**:
+> Special thanks to **Abdur Rouf ([@roufsweb](https://github.com/roufsweb))** from the [`portable-display`](https://github.com/roufsweb/portable-display) project for discovering, diagnosing, and documenting this zero-dongle direct GPU HDMI flashing workflow (`Comm_GFXI2C.dll`), the multi-monitor `ErrorCode:0xA` bypass, and the PWM divisor bug analysis.
+
 On systems with a dedicated GPU (e.g., **NVIDIA GeForce**, AMD Radeon, or Intel Arc), `RTDCustomerTool` can dump and flash the board's SPI flash memory directly over a **standard HDMI cable** using DDC/CI I2C commands (`Comm_GFXI2C.dll`).
 
 ### Hardware Connection:
