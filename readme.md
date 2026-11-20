@@ -74,6 +74,7 @@ firmwares/
 
 | Firmware Name | Target Panel(s) | Resolution & Rate | Interface | Checksum |
 | :--- | :--- | :---: | :---: | :---: |
+| **`HUAWEI_AD80HW_BOE_MV238FHB_N30_75Hz_6AC8.bin`** | BOE MV238FHB-N30 (Huawei Display 23.8" AD80HW Dump) | 1920x1080 @ 75Hz | 30-pin 2-Lane | `6AC8` |
 | **`LM270WQ1-SDF2_2560X1440_60Hz_148A.bin`** | LG LM270WQ1-SDF2 (Apple iMac 27" A1419 Dump) | 2560x1440 @ 60Hz | 4-Lane eDP | `148A` |
 | **`CUSTOM_JG2555TB_2560X1440_60Hz_4LANE_7BEE_LM270WQ1-SDF2.bin`** | LG LM270WQ1-SDF2 (Apple iMac 27" A1419) | 2560x1440 @ 60Hz | 40-pin 4-Lane | `7BEE` |
 | **`Essential_15inch_120Hz_144Hz_MultiPanel.bin`** | NV156FHM-NX1/NX2, LM156LFGL01..05, B156HAN13.0 | 1920x1080 @ 120/144Hz | 40-pin 4-Lane | `7ADA` |

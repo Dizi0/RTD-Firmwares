@@ -130,6 +130,25 @@ struct FirmwareAnalysis {
     boot_logo: String,
     factory_notes: Vec<String>,
     compatible_panels: Vec<&'static str>,
+    embedded_panel: Option<String>,
+}
+
+fn detect_embedded_panel(data: &[u8]) -> Option<String> {
+    let prefixes: &[&[u8]] = &[b"BOEMV", b"BOE_", b"NV1", b"NE1", b"B156", b"B140", b"B173", b"B101", b"LM270", b"LP156", b"LP140", b"N156", b"N173", b"N133", b"LQ133", b"MV238"];
+    for prefix in prefixes {
+        if let Some(pos) = data.windows(prefix.len()).position(|w| w == *prefix) {
+            let mut end = pos;
+            while end < data.len() && (data[end].is_ascii_alphanumeric() || data[end] == b'_' || data[end] == b'-') {
+                end += 1;
+            }
+            if end - pos >= 6 && end - pos <= 30 {
+                if let Ok(s) = std::str::from_utf8(&data[pos..end]) {
+                    return Some(s.to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 fn extract_hex_checksum_from_name(name: &str) -> Option<u16> {
@@ -281,6 +300,12 @@ fn analyze_firmware(path: &Path) -> Result<FirmwareAnalysis, String> {
         compatible_panels.push("BOE TV133QHM-NH0 (13.3\" 2560x1600 16:10 40-pin)");
     }
 
+    if fname.contains("AD80HW") || fname.contains("HUAWEI") {
+        compatible_panels.push("BOE MV238FHB-N30 (Huawei Display 23.8\" AD80HW FHD 75Hz)");
+    }
+
+    let embedded_panel = detect_embedded_panel(&data);
+
     Ok(FirmwareAnalysis {
         file_path: path.to_path_buf(),
         file_size,
@@ -298,6 +323,7 @@ fn analyze_firmware(path: &Path) -> Result<FirmwareAnalysis, String> {
         boot_logo,
         factory_notes,
         compatible_panels,
+        embedded_panel,
     })
 }
 
@@ -342,6 +368,9 @@ fn print_report(res: &FirmwareAnalysis) {
     println!("Keypad Scheme     : {}", res.keypad_type);
     println!("Backlight Driver  : {}", res.backlight_type);
     println!("Boot Logo         : {}", res.boot_logo);
+    if let Some(ref panel) = res.embedded_panel {
+        println!("Embedded Panel ID : [DETECTED] {}", panel);
+    }
 
     if !res.factory_notes.is_empty() {
         println!("\n--- [OEM FACTORY FLAGS] ---");

@@ -583,6 +583,18 @@ const KNOWN_PANELS: &[PanelSpec] = &[
         description: "9.7\" 2048x1536 Retina Ultra-High Density Display (iPad 3/4/5) - 30-pin 2-Lane eDP",
         template_tag: "60Hz_30PIN",
     },
+    PanelSpec {
+        model: "MV238FHB-N30",
+        brand: "BOE",
+        size: "23.8\"",
+        resolution: (1920, 1080),
+        refresh_rate: 75,
+        pins: 30,
+        lanes: "2 Lanes (Standard 60/75Hz)",
+        pixel_clock_mhz: 174.5,
+        description: "23.8\" 75Hz FHD IPS/ADS Desktop Monitor (Huawei Display AD80HW) - 30-pin 2-Lane eDP",
+        template_tag: "60Hz_30PIN",
+    },
 ];
 
 const LOGO_RESOLUTIONS: &[(u32, u32, &str)] = &[
@@ -704,6 +716,24 @@ fn process_logo_image(
     })
 }
 
+fn detect_embedded_panel(data: &[u8]) -> Option<String> {
+    let prefixes: &[&[u8]] = &[b"BOEMV", b"BOE_", b"NV1", b"NE1", b"B156", b"B140", b"B173", b"B101", b"LM270", b"LP156", b"LP140", b"N156", b"N173", b"N133", b"LQ133", b"MV238"];
+    for prefix in prefixes {
+        if let Some(pos) = data.windows(prefix.len()).position(|w| w == *prefix) {
+            let mut end = pos;
+            while end < data.len() && (data[end].is_ascii_alphanumeric() || data[end] == b'_' || data[end] == b'-') {
+                end += 1;
+            }
+            if end - pos >= 6 && end - pos <= 30 {
+                if let Ok(s) = std::str::from_utf8(&data[pos..end]) {
+                    return Some(s.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 #[derive(Clone, Default)]
 struct InspectorData {
     file_path: std::path::PathBuf,
@@ -727,6 +757,7 @@ struct InspectorData {
     backlight_type: String,
     status: String,
     notes: Vec<String>,
+    embedded_panel: Option<String>,
 }
 
 struct RtdStudioApp {
@@ -1041,6 +1072,8 @@ impl RtdStudioApp {
                 }
             }
 
+            let embedded_panel = detect_embedded_panel(&data);
+
             self.inspector_edit_name = monitor_name.clone();
             self.inspector_status = None;
 
@@ -1066,6 +1099,7 @@ impl RtdStudioApp {
                 backlight_type,
                 status,
                 notes,
+                embedded_panel,
             });
         }
     }
@@ -2168,6 +2202,16 @@ impl eframe::App for RtdStudioApp {
 
                             ui.separator();
                             ui.label(egui::RichText::new("Panel Parameters & Driving Signals:").strong());
+                            if let Some(panel) = &data.embedded_panel {
+                                ui.horizontal(|ui| {
+                                    ui.label("• Detected Panel ID :");
+                                    ui.colored_label(egui::Color32::from_rgb(0, 220, 255), panel);
+                                    if ui.button("Search in Panel Database").on_hover_cursor(egui::CursorIcon::PointingHand).clicked() {
+                                        self.panelook_search_query = panel.clone();
+                                        self.selected_tab = 2;
+                                    }
+                                });
+                            }
                             ui.label(format!("• Native Resolution : {}", data.resolution));
                             ui.label(format!("• Refresh Rate      : {}", data.refresh_rate));
                             ui.label(format!("• Pixel Clock       : {}", data.pixel_clock));
